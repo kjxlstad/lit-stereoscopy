@@ -8,9 +8,12 @@ from torch.utils.data import Dataset
 
 from data import data_paths, DataSplit, DataPath
 
+Batch = dict[str, torch.Tensor]
 
-def load_image(path: Path) -> torch.Tensor:
-    array = np.array(Image.open(path)).astype(np.float32) / 255
+
+def load_image(path: Path, grayscale: bool = False) -> torch.Tensor:
+    image = Image.open(path).convert("GRAY" if grayscale else "RGB")
+    array = np.array(image).astype(np.float32) / 255
     return torch.tensor(array).permute(2, 0, 1)
 
 
@@ -32,29 +35,51 @@ def load_disparity_map(path: Path) -> torch.Tensor:
     return torch.tensor(data).unsqueeze(0)
 
 
+class ChainedDataset(Dataset):
+    def __init__(self, *datasets: Dataset) -> None:
+        self.datasets = datasets
+
+    def __len__(self) -> int:
+        return sum(len(dataset) for dataset in self.datasets)
+
+    def __getitem__(self, index: int) -> Batch:
+        if index > len(self):
+            raise IndexError(f"index {index} is out of range for dataset of length {len(self)}")
+
+        for dataset in self.datasets:
+            if index < len(dataset):
+                return dataset[index]
+            index -= len(dataset)
+
+
 class SceneFlowDataset(Dataset):
     def __init__(self, root_dir: Path, split: DataSplit, grayscale: bool = False):
         self.root_dir = root_dir
         self.grayscale = grayscale
-        self.focal_length = int(split[5:7]) if "test" in split else None
+        self.focal_length = int(split[5:7]) if "test" in split else 0
 
         self.paths: list[DataPath] = data_paths(root_dir, split)
 
     def __len__(self) -> int:
         return len(self.paths)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, int | None]:
+    def __getitem__(self, index: int) -> Batch:
         image_left_path, image_right_path, disparity_path = self.paths[index]
 
-        image_left = load_image(image_left_path)
-        image_right = load_image(image_right_path)
+        image_left = load_image(image_left_path, self.grayscale)
+        image_right = load_image(image_right_path, self.grayscale)
         disparity = load_disparity_map(disparity_path)
 
         if self.grayscale:
             image_left = image_left.mean(dim=0, keepdim=True)
             image_right = image_right.mean(dim=0, keepdim=True)
 
-        return image_left, image_right, disparity, self.focal_length
+        return {
+            "image_left": image_left,
+            "image_right": image_right,
+            "disparity": disparity,
+            "focal_length": torch.tensor(self.focal_length, dtype=torch.uint8),
+        }
 
 
 if __name__ == "__main__":
