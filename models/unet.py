@@ -135,7 +135,7 @@ class UNet(LightningModule):
             "thres_3": threshold_error(disp_pred, batch["disparity"], mask, 3.0),
         }
 
-        self.log_dict({f"val/{m}": v.item() for m, v in metrics.items()}, on_step=False, on_epoch=True)
+        self.log_dict({f"test/{m}": v.item() for m, v in metrics.items()}, on_step=False, on_epoch=True)
         return metrics
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
