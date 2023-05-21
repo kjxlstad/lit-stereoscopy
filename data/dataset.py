@@ -12,8 +12,11 @@ Batch = dict[str, torch.Tensor]
 
 
 def load_image(path: Path, grayscale: bool = False) -> torch.Tensor:
-    image = Image.open(path).convert("GRAY" if grayscale else "RGB")
-    array = np.array(image).astype(np.float32) / 255
+    array = np.array(Image.open(path)).astype(np.float32) / 255
+
+    if grayscale:
+        array = array.mean(axis=2, keepdims=True)
+
     return torch.tensor(array).permute(2, 0, 1)
 
 
